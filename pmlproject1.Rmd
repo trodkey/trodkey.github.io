@@ -1,0 +1,82 @@
+---
+title: "pmlproject1"
+author: "Travis Rodkey"
+date: "Friday, March 20, 2015"
+output: html_document
+---
+## Project to predict Activity Quality from Activity Monitors for 6 subjects.
+
+#### Load Libraries
+```{r, echo=FALSE}
+library(caret)
+library(dplyr)
+library(pROC)
+```
+
+#### Make it reproducible by setting the seed
+```{r}
+set.seed(333)
+```
+
+#### Read and prepare the training file - remove the ID (X) column since it's not real data, just a row ID.
+```{r}
+training_dataset_file <- read.csv("C:/Users/Scott/Desktop/pml-training.csv", na.strings=c("","NA", "NULL", "#DIV/0!"))
+nrow(training_dataset_file)
+training_dataset_file$classe <- factor(training_dataset_file$classe)
+training_dataset_file$X <- NULL
+```
+
+#### Create model and test for in-sample error
+```{r}
+## Partition Data 60/40 train/test like in the lectures
+inTrain <- createDataPartition(y=training_dataset_file$classe, p=0.6, list=FALSE)
+training <- training_dataset_file[inTrain,]
+testing <- training_dataset_file[-inTrain,]
+## Inspection shows 406 is the threshold for removing columns due to excessive NAs, all columns like that are equal in NAs
+colsgone <- apply(!is.na(training), 2, sum) > 406
+training <- training[, colsgone]
+## Check which columns have near zero variance and remove them to enhance machine learning 
+myDataNZV <- nearZeroVar(training, saveMetrics=TRUE)
+training$new_window <- NULL  ## remove this column for NSV = 0.01 variance
+```
+
+#### Train the Gradient Boosting (gbm) Machine Learning model to predict classe and set the cross-validation parameters with fitControl
+```{r}
+fitControl <- trainControl(method = "repeatedcv",
+                           number = 2,
+                           repeats = 2                                                  
+                          )
+modelFit <- train(classe ~., method="gbm", trControl = fitControl, data=training, verbose=FALSE)
+```
+
+#### Show Model Fit and Cross-Validation Error, which is ~0.50%
+```{r}
+# Show model Fit with cross-validation
+modelFit
+# Show Cross-validation error
+modelFit$resample
+```
+
+#### Run Prediction and Get Out-of-Sample Error, which is estimated to be ~0.50%.  Prediction Accuracy is ~99.5%.
+```{r}
+prediction <- predict(modelFit, testing)
+modelFit$results
+modelFit$finalModel
+confusionMatrix(prediction, testing$classe)
+```
+
+#### Plot Results
+```{r, fig.width=3, fig.height=3}
+qplot(classe, prediction, data=testing)
+```
+
+#### Get, clean, and predict Activity Quality on the Probe (testing) dataset from the website.
+```{r}
+testing_dataset_file <- read.csv("C:/Users/Scott/Desktop/pml-testing.csv", na.strings=c("","NA", "NULL", "#DIV/0!"))
+nrow(testing_dataset_file)
+testing_dataset_file$X <- NULL
+testing_dataset_file$new_window <- NULL
+finalprediction <- predict(modelFit, testing_dataset_file)
+finalprediction
+```
+
